@@ -1,3 +1,6 @@
+#ifndef UNITYPICOCOMMS_H
+#define UNITYPICOCOMMS_H
+
 #include "Arduino.h"
 #include "PacketSerial.h"
 #include "FastLED.h"
@@ -295,3 +298,4 @@ void FastLED_Update(){
     comms.FastLED_Updated = true;
 }
 
+#endif
