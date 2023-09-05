@@ -106,6 +106,9 @@ class UnityPicoComms{
             
         }
         void update(){
+            if(!Serial){
+                Serial.begin(baudRate);
+            }
             packetSerial.update(); // get incoming Unity packets
             for(int i = 0; i < numActiveOutputObjects; i++){
                 if(activeOutputObjects[i]->update()) activeOutputObjects[i]->updated = true;
