@@ -297,6 +297,8 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
     }
 }
 
+ // does not contain "FastLED.show() because we only want to call it once
+ // when we have multiple FastLED instances
 void FastLED_Update(){
     comms.FastLED_Updated = true;
 }
