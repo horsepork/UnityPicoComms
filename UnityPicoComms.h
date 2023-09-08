@@ -179,7 +179,7 @@ class UnityPicoComms{
             numActiveOutputObjects++;
         }
 
-        void addOutput(OutputDataStruct packet){
+        void addOutput(OutputObjectStruct packet){
             addOutput(packet.msgType, packet.data, packet.dataSize, packet.callback);
         }
 
@@ -190,7 +190,7 @@ class UnityPicoComms{
             inputObjects[messageType].activate(messageType, buf, size, callback);
         }
 
-        void addInput(InputDataStruct packet){
+        void addInput(InputObjectStruct packet){
             addInput(packet.msgType, packet.data, packet.dataSize, packet.callback);
         }
 
