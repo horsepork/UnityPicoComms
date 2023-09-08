@@ -11,9 +11,9 @@
 void onPacketReceived(const uint8_t* buffer, size_t size);
 void FastLED_Update();
 
-struct InputObjectPacket{
+struct InputObjectStruct{
     public:
-        InputObjectPacket(uint8_t _msgType, size_t _dataSize, void(*_callback)()){
+        InputObjectStruct(uint8_t _msgType, size_t _dataSize, void(*_callback)()){
             msgType = _msgType;
             dataSize = _dataSize;
             data = new uint8_t[dataSize];
@@ -25,9 +25,9 @@ struct InputObjectPacket{
         void(*callback)() = nullptr;
 };
 
-struct NeopixelInputObjectPacket{
+struct NeopixelInputObjectStruct{
     public:
-        NeopixelInputObjectPacket(uint8_t _msgType, CRGB* _data, size_t _numNeopixels){
+        NeopixelInputObjectStruct(uint8_t _msgType, CRGB* _data, size_t _numNeopixels){
             msgType = _msgType;
             data = _data;
             numNeopixels = _numNeopixels;
@@ -37,9 +37,9 @@ struct NeopixelInputObjectPacket{
         size_t numNeopixels;
 };
 
-struct OutputObjectPacket{
+struct OutputObjectStruct{
     public:
-        OutputObjectPacket(uint8_t _msgType, size_t _dataSize, bool(*_callback)()){
+        OutputObjectStruct(uint8_t _msgType, size_t _dataSize, bool(*_callback)()){
             msgType = _msgType;
             dataSize = _dataSize;
             data = new uint8_t[dataSize];
@@ -179,7 +179,7 @@ class UnityPicoComms{
             numActiveOutputObjects++;
         }
 
-        void addOutput(OutputDataPacket packet){
+        void addOutput(OutputDataStruct packet){
             addOutput(packet.msgType, packet.data, packet.dataSize, packet.callback);
         }
 
@@ -190,7 +190,7 @@ class UnityPicoComms{
             inputObjects[messageType].activate(messageType, buf, size, callback);
         }
 
-        void addInput(InputDataPacket packet){
+        void addInput(InputDataStruct packet){
             addInput(packet.msgType, packet.data, packet.dataSize, packet.callback);
         }
 
@@ -201,7 +201,7 @@ class UnityPicoComms{
             inputObjects[messageType].activate(messageType, buf, size);
         }
 
-        void addInput(NeopixelInputObjectPacket packet){
+        void addInput(NeopixelInputObjectStruct packet){
             addInput(packet.msgType, packet.data, packet.numNeopixels);
         }
         
