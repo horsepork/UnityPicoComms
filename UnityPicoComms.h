@@ -11,6 +11,46 @@
 void onPacketReceived(const uint8_t* buffer, size_t size);
 void FastLED_Update();
 
+struct InputObjectPacket{
+    public:
+        InputObjectPacket(uint8_t _msgType, size_t _dataSize, void(*_callback)()){
+            msgType = _msgType;
+            dataSize = _dataSize;
+            data = new uint8_t[dataSize];
+            callback = _callback;
+        }
+        uint8_t msgType;
+        uint8_t* data;
+        size_t dataSize;
+        void(*callback)() = nullptr;
+};
+
+struct NeopixelInputObjectPacket{
+    public:
+        NeopixelInputObjectPacket(uint8_t _msgType, CRGB* _data, size_t _numNeopixels){
+            msgType = _msgType;
+            data = _data;
+            numNeopixels = _numNeopixels;
+        }
+        uint8_t msgType;
+        CRGB* data;
+        size_t numNeopixels;
+};
+
+struct OutputObjectPacket{
+    public:
+        OutputObjectPacket(uint8_t _msgType, size_t _dataSize, bool(*_callback)()){
+            msgType = _msgType;
+            dataSize = _dataSize;
+            data = new uint8_t[dataSize];
+            callback = _callback;
+        }
+        uint8_t msgType;
+        uint8_t* data;
+        size_t dataSize;
+        bool(*callback)() = nullptr;
+};
+
 enum UnityPicoCommsPacketEnum{
     INVALID_PACKET = 0,
     ID_MSG = 0b00100000,
@@ -139,6 +179,10 @@ class UnityPicoComms{
             numActiveOutputObjects++;
         }
 
+        void addOutput(OutputDataPacket packet){
+            addOutput(packet.msgType, packet.data, packet.dataSize, packet.callback);
+        }
+
         void addInput(uint8_t messageType, uint8_t* buf, size_t size, void (*callback)()){
             if(messageType > 31 || outputObjects[messageType].activated){
                 Error();
@@ -146,11 +190,19 @@ class UnityPicoComms{
             inputObjects[messageType].activate(messageType, buf, size, callback);
         }
 
+        void addInput(InputDataPacket packet){
+            addInput(packet.msgType, packet.data, packet.dataSize, packet.callback);
+        }
+
         void addInput(uint8_t messageType, CRGB* buf, size_t size){
             if(messageType > 31 || outputObjects[messageType].activated){
                 Error();
             }
             inputObjects[messageType].activate(messageType, buf, size);
+        }
+
+        void addInput(NeopixelInputObjectPacket packet){
+            addInput(packet.msgType, packet.data, packet.numNeopixels);
         }
         
         const char* getPicoID(){
