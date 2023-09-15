@@ -227,7 +227,7 @@ class UnityPicoComms{
         }
 
         void sendPacket(uint8_t messageType, uint8_t value, UnityPicoCommsPacketEnum packetType){
-            uint8_t buf[1] = {value};_t size, Uni
+            uint8_t buf[1] = {value};
             sendPacket(messageType, buf, 1, packetType);
         }
 
