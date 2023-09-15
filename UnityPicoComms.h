@@ -145,9 +145,11 @@ class UnityPicoComms{
             packetSerial.setPacketHandler(&onPacketReceived);
             packetSerial.begin(baudRate);
             digitalWrite(LED_PIN, LOW);
-            connected = true;   
+            connected = true;
+            rp2040.wdt_begin(1000);
         }
         void update(){
+            rp2040.wdt_reset();
             if(!Serial){
                 if(millis() - serialReconnectTimer < SERIAL_RECONNECT_TIME) {
                     return;
