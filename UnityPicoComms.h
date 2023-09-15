@@ -222,7 +222,7 @@ class UnityPicoComms{
             return PicoID;
         }
 
-        void sendPacket(uint8_t messageType, char* str, size_t PicoCommsPacketEnum packetType){
+        void sendPacket(uint8_t messageType, char* str, size_t size, UnityPicoCommsPacketEnum packetType){
             sendPacket(messageType, (uint8_t*)str, size, packetType);
         }
 
