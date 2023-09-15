@@ -120,6 +120,8 @@ class InputMessageObject{
         }
 };
 
+#define SERIAL_RECONNECT_TIME 100
+
 template<size_t receiveBufferSize = 6400> 
 class UnityPicoComms{    
     private:
@@ -128,6 +130,8 @@ class UnityPicoComms{
         OutputMessageObject outputObjects[32];
         OutputMessageObject *activeOutputObjects[32];
         uint8_t numActiveOutputObjects;
+        bool connected = false;
+        uint32_t serialReconnectTimer;
     
     public:
         PacketSerial_<COBS, 0, receiveBufferSize> packetSerial;
@@ -141,19 +145,23 @@ class UnityPicoComms{
             packetSerial.setPacketHandler(&onPacketReceived);
             packetSerial.begin(baudRate);
             digitalWrite(LED_PIN, LOW);
-            
-            
-            
+            connected = true;   
         }
         void update(){
             if(!Serial){
+                if(millis() - serialReconnectTimer < SERIAL_RECONNECT_TIME) {
+                    return;
+                }
+                serialReconnectTimer = millis();
                 Serial.begin(baudRate);
+                if(!Serial) return;
             }
             packetSerial.update(); // get incoming Unity packets
             for(int i = 0; i < numActiveOutputObjects; i++){
-                if(activeOutputObjects[i]->update()) activeOutputObjects[i]->updated = true;
+                if(activeOutputObjects[i]->update()){ // update will only return true once, but updated will stay true until correct confirmation is received, hence the separate if statements
+                    activeOutputObjects[i]->updated = true;
+                }
                 if(activeOutputObjects[i]->updated){
-                    
                     if(millis() - activeOutputObjects[i]->timer < TIME_BETWEEN_MESSAGES) continue;
                     UnityPicoCommsPacketEnum outputPacketType = activeOutputObjects[i]->size > 255 ? LARGE_DATA_PACKET : DATA_PACKET;
                     sendPacket(activeOutputObjects[i]->messageType, activeOutputObjects[i]->buf, activeOutputObjects[i]->size, outputPacketType);
@@ -171,7 +179,7 @@ class UnityPicoComms{
         }
 
         void addOutput(uint8_t messageType, uint8_t* buf, size_t size, bool(*callback)()){
-            if(messageType > 31 || outputObjects[messageType].activated){
+            if(messageType > 31 || outputObjects[messageType].activated || inputObjects[messageType].activated){
                 Error();
             }
             outputObjects[messageType].activate(messageType, buf, size, callback);
@@ -184,7 +192,7 @@ class UnityPicoComms{
         }
 
         void addInput(uint8_t messageType, uint8_t* buf, size_t size, void (*callback)()){
-            if(messageType > 31 || outputObjects[messageType].activated){
+            if(messageType > 31 || outputObjects[messageType].activated || inputObjects[messageType].activated){
                 Error();
             }
             inputObjects[messageType].activate(messageType, buf, size, callback);
@@ -252,6 +260,10 @@ class UnityPicoComms{
         }
 
         void verifyConfirmationMsg(uint8_t msgType, uint8_t incomingCheckSum){
+
+            if(outputObjects[msgType].activated == false){
+                return;
+            }
             
             if(outputObjects[msgType].expectedMessageConfirmation == incomingCheckSum){
                 
@@ -271,6 +283,9 @@ class UnityPicoComms{
         }
 
         void sendBigPacketHandshake(uint8_t msgType){
+            if(inputObjects[msgType].active == false){
+                return;
+            }
             uint8_t bigPacketHandshakeBuf[1] = {0};
             sendPacket(msgType, bigPacketHandshakeBuf, 1, BIG_PACKET_MSG);
             inputObjects[msgType].awaitingBigPacket = true;
@@ -313,7 +328,6 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
     if(size < processedPacketSize + dataStartIndex){
         return;
     }
-    
 
     uint8_t _checkSum = 0;
     for(int i = dataStartIndex; i < size; i++)_checkSum += buffer[i];
@@ -321,27 +335,26 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
         return;
     }
         
-
-    
     uint8_t msgType = 0b00011111 & buffer[0];
-    
     
     switch(packetType){
         case ID_MSG:
             comms.sendPicoID();
             break;
         case CONFIRMATION_RESPONSE:
-            
             comms.verifyConfirmationMsg(msgType, buffer[3]);
-            
             break;
         case BIG_PACKET_MSG:
             comms.sendBigPacketHandshake(msgType);
             break;
         case LARGE_DATA_PACKET:
         case DATA_PACKET:
-            
-            if(processedPacketSize > comms.inputObjects[msgType].size) return; // error msg appropriate here
+            if(inputObjects[msgType].activated == false){
+                return;
+            }
+            if(processedPacketSize > comms.inputObjects[msgType].size){
+                return; // error msg appropriate here
+            }
             comms.sendConfirmationResponse(msgType, checkSum);
             comms.inputObjects[msgType].update(buffer + dataStartIndex, processedPacketSize);
             comms.inputObjects[msgType].awaitingBigPacket = false;
