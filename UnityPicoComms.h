@@ -90,17 +90,20 @@ class InputMessageObject{
         bool updated = false;
         bool awaitingBigPacket = false;
         void (*onUpdate)() = nullptr;
+        bool activated = false;
         void activate(uint8_t _messageType, uint8_t* _buf, size_t _size, void(*callback)()){
             messageType = _messageType;
             buf = _buf;
             size = _size;
             onUpdate = callback;
+            activated = true;
         }
         void activate(uint8_t _messageType, CRGB* _Neopixel_buf, size_t _size){
             messageType = _messageType;
             Neopixel_buf = _Neopixel_buf;
             size = _size * 3 + 2; // to allow for two bytes offset index
             onUpdate = FastLED_Update;
+            activated = true;
         }
         void update(const uint8_t *_buf, size_t _size){
             // this is a bit of a mess and will not work for multiple separate
@@ -205,7 +208,7 @@ class UnityPicoComms{
         }
 
         void addInput(uint8_t messageType, CRGB* buf, size_t size){
-            if(messageType > 31 || outputObjects[messageType].activated){
+            if(messageType > 31 || outputObjects[messageType].activated || inputObjects[messageType].activated){
                 Error();
             }
             inputObjects[messageType].activate(messageType, buf, size);
@@ -219,12 +222,12 @@ class UnityPicoComms{
             return PicoID;
         }
 
-        void sendPacket(uint8_t messageType, char* str, size_t size, UnityPicoCommsPacketEnum packetType){
+        void sendPacket(uint8_t messageType, char* str, sizetyPicoCommsPacketEnum packetType){
             sendPacket(messageType, (uint8_t*)str, size, packetType);
         }
 
         void sendPacket(uint8_t messageType, uint8_t value, UnityPicoCommsPacketEnum packetType){
-            uint8_t buf[1] = {value};
+            uint8_t buf[1] = {value};_t size, Uni
             sendPacket(messageType, buf, 1, packetType);
         }
 
