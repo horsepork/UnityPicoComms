@@ -355,4 +355,12 @@ void FastLED_Update(){
     comms.FastLED_Updated = true;
 }
 
+uint16_t power(uint8_t base, uint8_t exponent){ // not used here, but making it accessible for all Picos that may need it
+    uint16_t returnVal = 1;
+    for(int i = 0; i < exponent; i++){
+        returnVal *= base;
+    }
+    return returnVal;
+}
+
 #endif
