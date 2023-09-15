@@ -222,7 +222,7 @@ class UnityPicoComms{
             return PicoID;
         }
 
-        void sendPacket(uint8_t messageType, char* str, sizetyPicoCommsPacketEnum packetType){
+        void sendPacket(uint8_t messageType, char* str, size_t PicoCommsPacketEnum packetType){
             sendPacket(messageType, (uint8_t*)str, size, packetType);
         }
 
@@ -288,7 +288,7 @@ class UnityPicoComms{
         }
 
         void sendBigPacketHandshake(uint8_t msgType){
-            if(inputObjects[msgType].active == false){
+            if(inputObjects[msgType].activated == false){
                 return;
             }
             uint8_t bigPacketHandshakeBuf[1] = {0};
@@ -354,7 +354,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
             break;
         case LARGE_DATA_PACKET:
         case DATA_PACKET:
-            if(inputObjects[msgType].activated == false){
+            if(comms.inputObjects[msgType].activated == false){
                 return;
             }
             if(processedPacketSize > comms.inputObjects[msgType].size){
