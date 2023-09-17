@@ -287,6 +287,13 @@ class UnityPicoComms{
             sendPacket(0, ID_Buf, ID_Length, ID_MSG);
         }
 
+        void resendOutputPackets(){
+            for(int i = 0; i < numActiveOutputObjects; i++){
+                outputObjects[i].updated = false;
+            }
+        }
+ 
+
         void sendBigPacketHandshake(uint8_t msgType){
             if(inputObjects[msgType].activated == false){
                 return;
@@ -345,6 +352,7 @@ void onPacketReceived(const uint8_t* buffer, size_t size) {
     switch(packetType){
         case ID_MSG:
             comms.sendPicoID();
+            comms.resendOutputPackets(); // so when Unity reconnects it gets the most current state from Pico
             break;
         case CONFIRMATION_RESPONSE:
             comms.verifyConfirmationMsg(msgType, buffer[3]);
