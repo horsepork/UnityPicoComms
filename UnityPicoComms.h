@@ -167,7 +167,7 @@ class UnityPicoComms{
                 if(activeOutputObjects[i]->update()){ // update will only return true once, but updated will stay true until correct confirmation is received, hence the separate if statements
                     activeOutputObjects[i]->updated = true;
                 }
-                if(millis() - activeOutputObjects[i].timer > activeOutputObjects[i]->automaticResendTime){
+                if(millis() - activeOutputObjects[i]->timer > activeOutputObjects[i]->automaticResendTime){
                     activeOutputObjects[i]->updated = true;
                 }
                 if(activeOutputObjects[i]->updated){
