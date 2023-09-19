@@ -76,6 +76,7 @@ class OutputMessageObject{
         size_t size;
         bool(*update)() = nullptr;
         uint32_t timer;
+        uint16_t automaticResendTime = 1000;
         int16_t expectedMessageConfirmation = -2;
         bool updated = true;
         bool activated = false;
@@ -166,11 +167,15 @@ class UnityPicoComms{
                 if(activeOutputObjects[i]->update()){ // update will only return true once, but updated will stay true until correct confirmation is received, hence the separate if statements
                     activeOutputObjects[i]->updated = true;
                 }
+                if(millis() - activeOutputObjects[i].timer > activeOutputObjects[i]->automaticResendTime){
+                    activeOutputObjects[i]->updated = true;
+                }
                 if(activeOutputObjects[i]->updated){
                     if(millis() - activeOutputObjects[i]->timer < TIME_BETWEEN_MESSAGES) continue;
                     UnityPicoCommsPacketEnum outputPacketType = activeOutputObjects[i]->size > 255 ? LARGE_DATA_PACKET : DATA_PACKET;
                     sendPacket(activeOutputObjects[i]->messageType, activeOutputObjects[i]->buf, activeOutputObjects[i]->size, outputPacketType);
                     activeOutputObjects[i]->timer = millis();
+                    activeOutputObjects[i]->automaticResendTime = 900 + random(200);
                 }
             }
             if(FastLED_Updated){
