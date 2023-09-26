@@ -136,6 +136,7 @@ class UnityPicoComms{
         uint8_t numActiveOutputObjects;
         bool connected = false;
         uint32_t serialReconnectTimer;
+        uint16_t watchdogTimerLength = 3000;
     
     public:
         PacketSerial_<COBS, 0, receiveBufferSize> packetSerial;
@@ -150,7 +151,11 @@ class UnityPicoComms{
             packetSerial.begin(baudRate);
             digitalWrite(LED_PIN, LOW);
             connected = true;
-            rp2040.wdt_begin(1000);
+            rp2040.wdt_begin(watchdogTimerLength);
+        }
+        void setWatchdogTimerLength(uint16_t length){
+            // note: must be called prior to begin
+            watchdogTimerLength = length;
         }
         void update(){
             rp2040.wdt_reset();
