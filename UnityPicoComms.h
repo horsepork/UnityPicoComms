@@ -160,14 +160,14 @@ class UnityPicoComms{
         void update(){
             rp2040.wdt_reset();
             if(!Serial){
-                if(millis() - serialReconnectTimer < SERIAL_RECONNECT_TIME) {
-                    return;
+                if(millis() - serialReconnectTimer > SERIAL_RECONNECT_TIME) {
+                    serialReconnectTimer = millis();
+                    Serial.begin(baudRate);
                 }
-                serialReconnectTimer = millis();
-                Serial.begin(baudRate);
-                if(!Serial) return;
             }
-            packetSerial.update(); // get incoming Unity packets
+            if(Serial){
+                packetSerial.update(); // get incoming Unity packets
+            }
             for(int i = 0; i < numActiveOutputObjects; i++){
                 if(activeOutputObjects[i]->update()){ // update will only return true once, but updated will stay true until correct confirmation is received, hence the separate if statements
                     activeOutputObjects[i]->updated = true;
@@ -242,6 +242,7 @@ class UnityPicoComms{
         }
 
         void sendPacket(uint8_t messageType, uint8_t* buffer, size_t size, UnityPicoCommsPacketEnum packetType){
+            if(!Serial) return;
             if(messageType > 31 || packetType == INVALID_PACKET){
                 Error();
                 return;
@@ -268,7 +269,6 @@ class UnityPicoComms{
             for(int i = dataStartOffset; i < encodedSize; i++){
                 outputBuffer[i] = buffer[i-dataStartOffset];
             }
-
             packetSerial.send(outputBuffer, encodedSize);
             outputObjects[messageType].expectedMessageConfirmation = checkSum;
             outputObjects[messageType].timer = millis();
