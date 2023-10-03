@@ -301,7 +301,7 @@ class UnityPicoComms{
 
         void resendOutputPackets(){
             for(int i = 0; i < numActiveOutputObjects; i++){
-                outputObjects[i].updated = false;
+                activeOutputObjects[i]->updated = false;
             }
         }
  
