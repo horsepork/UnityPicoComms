@@ -270,7 +270,7 @@ class UnityPicoComms{
                 outputBuffer[i] = buffer[i-dataStartOffset];
             }
             packetSerial.send(outputBuffer, encodedSize);
-            if(packetType == DATA_PACKET || packetType == LARGE_DATA_PACKET){
+            if((packetType == DATA_PACKET || packetType == LARGE_DATA_PACKET) && outputObjects[messageType].activated){
                 outputObjects[messageType].expectedMessageConfirmation = checkSum;
                 outputObjects[messageType].timer = millis();
             }
