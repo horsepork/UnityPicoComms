@@ -155,7 +155,7 @@ class UnityPicoComms{
             baudRate = _baudRate;
             packetSerial.setPacketHandler(&onPacketReceived);
             if(SerialPort){
-                packetSerial.setStream(port);
+                packetSerial.setStream(SerialPort);
             }
             packetSerial.begin(baudRate);
             digitalWrite(LED_PIN, LOW);
