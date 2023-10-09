@@ -137,17 +137,26 @@ class UnityPicoComms{
         bool connected = false;
         uint32_t serialReconnectTimer;
         uint16_t watchdogTimerLength = 3000;
+        Stream* SerialPort = nullptr;
     
     public:
         PacketSerial_<COBS, 0, receiveBufferSize> packetSerial;
         InputMessageObject inputObjects[32];
         bool FastLED_Updated = false;
+
+        void setSerialPort(Stream* port){
+            SerialPort = port;
+        }
+
         void begin(const char* _id, uint32_t _baudRate = 921600){
             pinMode(LED_PIN, OUTPUT);
             digitalWrite(LED_PIN, HIGH);
             PicoID = _id;
             baudRate = _baudRate;
             packetSerial.setPacketHandler(&onPacketReceived);
+            if(SerialPort){
+                packetSerial.setStream(port);
+            }
             packetSerial.begin(baudRate);
             digitalWrite(LED_PIN, LOW);
             connected = true;
