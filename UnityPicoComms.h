@@ -69,6 +69,9 @@ class OutputMessageObject{
             activated = true;
             messageType = _messageType; // bit redundant since it's also the outputObject array index, but whatevz™
             update = callback;
+            for(int i = 0; i < size; i++){
+                buf[i] = 0;
+            }
         }
 
         uint8_t messageType;
@@ -98,6 +101,9 @@ class InputMessageObject{
             size = _size;
             onUpdate = callback;
             activated = true;
+            for(int i = 0; i < size; i++){
+                buf[i] = 0;
+            }
         }
         void activate(uint8_t _messageType, CRGB* _Neopixel_buf, size_t _size){
             messageType = _messageType;
@@ -223,6 +229,9 @@ class UnityPicoComms{
         }
 
         void addInput(InputObjectStruct packet){
+            for(int i = 0; i < packet.dataSize; i++){
+                packet.data[i] = 0;
+            }
             addInput(packet.msgType, packet.data, packet.dataSize, packet.callback);
         }
 
