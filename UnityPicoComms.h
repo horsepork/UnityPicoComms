@@ -4,6 +4,8 @@
 #include "Arduino.h"
 #include "PacketSerial.h"
 #include "FastLED.h"
+#include "LibPrintf.h"
+#include "PicoBuzzer.h"
 
 #define TIME_BETWEEN_MESSAGES 20
 #define LED_PIN 25
@@ -130,8 +132,6 @@ class InputMessageObject{
         }
 };
 
-#define SERIAL_RECONNECT_TIME 100
-
 template<size_t receiveBufferSize = 6400> 
 class UnityPicoComms{    
     private:
@@ -141,9 +141,8 @@ class UnityPicoComms{
         OutputMessageObject *activeOutputObjects[32];
         uint8_t numActiveOutputObjects;
         bool connected = false;
-        uint32_t serialReconnectTimer;
         uint16_t watchdogTimerLength = 3000;
-        Stream* SerialPort = nullptr;
+        Stream* SerialPort = &Serial;
     
     public:
         PacketSerial_<COBS, 0, receiveBufferSize> packetSerial;
@@ -154,16 +153,24 @@ class UnityPicoComms{
             SerialPort = port;
         }
 
-        void begin(const char* _id, uint32_t _baudRate = 921600){
+        void begin(const char* _id, uint32_t _baudRate = 115200){
             pinMode(LED_PIN, OUTPUT);
             digitalWrite(LED_PIN, HIGH);
             PicoID = _id;
             baudRate = _baudRate;
+            packetSerial.setStream(SerialPort);
             packetSerial.setPacketHandler(&onPacketReceived);
-            if(SerialPort){
-                packetSerial.setStream(SerialPort);
+            const char* SerialName;
+            if(SerialPort == &Serial){
+                Serial.begin(baudRate);
+                // while(!Serial); // can't think of a good reason not to cycle through updates in the meantime
             }
-            packetSerial.begin(baudRate);
+            else if(SerialPort == &Serial1){
+                Serial1.begin(baudRate);
+            }
+            else if(SerialPort == &Serial2){
+                Serial2.begin(baudRate);
+            }
             digitalWrite(LED_PIN, LOW);
             connected = true;
             rp2040.wdt_begin(watchdogTimerLength);
@@ -172,16 +179,20 @@ class UnityPicoComms{
             // note: must be called prior to begin
             watchdogTimerLength = length;
         }
+
+        bool isConnected(){ // will only return false if using Serial and there is no USB connection, no way of verifying connection otherwise
+            if(SerialPort == &Serial){
+                return Serial;
+            }
+            return true;
+        }
+
         void update(){
             rp2040.wdt_reset();
-            if(!Serial){
-                if(millis() - serialReconnectTimer > SERIAL_RECONNECT_TIME) {
-                    serialReconnectTimer = millis();
-                    Serial.begin(baudRate);
-                }
-            }
-            if(Serial){
+            if(isConnected()){
                 packetSerial.update(); // get incoming Unity packets
+            }
+            else{
             }
             for(int i = 0; i < numActiveOutputObjects; i++){
                 if(activeOutputObjects[i]->update()){ // update will only return true once, but updated will stay true until correct confirmation is received, hence the separate if statements
@@ -260,7 +271,7 @@ class UnityPicoComms{
         }
 
         void sendPacket(uint8_t messageType, uint8_t* buffer, size_t size, UnityPicoCommsPacketEnum packetType){
-            if(!Serial) return;
+            if(!isConnected()) return;
             if(messageType > 31 || packetType == INVALID_PACKET){
                 Error();
                 return;
@@ -358,6 +369,7 @@ class UnityPicoComms{
 UnityPicoComms comms;
 
 void onPacketReceived(const uint8_t* buffer, size_t size) {
+    digitalWrite(25, HIGH);
     uint8_t checkSum = buffer[1];
     size_t processedPacketSize = buffer[2];
     uint8_t dataStartIndex = 3;
