@@ -175,7 +175,7 @@ class UnityPicoComms{
             rp2040.wdt_begin(watchdogTimerLength);
         }
 
-        void begin(const char* _id, uint32t _baudRate){
+        void begin(const char* _id, uint32_t _baudRate){
             baudRate = _baudRate;
             begin(_id);
         }
