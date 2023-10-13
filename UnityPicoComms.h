@@ -136,7 +136,7 @@ template<size_t receiveBufferSize = 6400>
 class UnityPicoComms{    
     private:
         const char* PicoID;
-        uint32_t baudRate = 576000;
+        uint32_t baudRate = 921600;
         OutputMessageObject outputObjects[32];
         OutputMessageObject *activeOutputObjects[32];
         uint8_t numActiveOutputObjects;
@@ -153,11 +153,10 @@ class UnityPicoComms{
             SerialPort = port;
         }
 
-        void begin(const char* _id, uint32_t _baudRate = baudRate){
+        void begin(const char* _id){
             pinMode(LED_PIN, OUTPUT);
             digitalWrite(LED_PIN, HIGH);
             PicoID = _id;
-            baudRate = _baudRate;
             packetSerial.setStream(SerialPort);
             packetSerial.setPacketHandler(&onPacketReceived);
             const char* SerialName;
@@ -175,6 +174,12 @@ class UnityPicoComms{
             connected = true;
             rp2040.wdt_begin(watchdogTimerLength);
         }
+
+        void begin(const char* _id, uint32t _baudRate){
+            baudRate = _baudRate;
+            begin(_id);
+        }
+
         void setWatchdogTimerLength(uint16_t length){
             // note: must be called prior to begin
             watchdogTimerLength = length;
