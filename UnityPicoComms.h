@@ -136,7 +136,7 @@ template<size_t receiveBufferSize = 6400>
 class UnityPicoComms{    
     private:
         const char* PicoID;
-        uint32_t baudRate = 921600;
+        uint32_t baudRate = 576000;
         OutputMessageObject outputObjects[32];
         OutputMessageObject *activeOutputObjects[32];
         uint8_t numActiveOutputObjects;
@@ -153,7 +153,7 @@ class UnityPicoComms{
             SerialPort = port;
         }
 
-        void begin(const char* _id, uint32_t _baudRate = 115200){
+        void begin(const char* _id, uint32_t _baudRate = baudRate){
             pinMode(LED_PIN, OUTPUT);
             digitalWrite(LED_PIN, HIGH);
             PicoID = _id;
@@ -369,7 +369,6 @@ class UnityPicoComms{
 UnityPicoComms comms;
 
 void onPacketReceived(const uint8_t* buffer, size_t size) {
-    digitalWrite(25, HIGH);
     uint8_t checkSum = buffer[1];
     size_t processedPacketSize = buffer[2];
     uint8_t dataStartIndex = 3;
