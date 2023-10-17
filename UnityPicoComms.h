@@ -41,7 +41,7 @@ struct NeopixelInputObjectStruct{
 
 struct OutputObjectStruct{
     public:
-        OutputObjectStruct(uint8_t _msgType, size_t _dataSize, bool(*_callback)()){
+        OutputObjectStruct(uint8_t _msgType, size_t _dataSize, bool(*_callback)(bool)){
             msgType = _msgType;
             dataSize = _dataSize;
             data = new uint8_t[dataSize];
@@ -50,7 +50,7 @@ struct OutputObjectStruct{
         uint8_t msgType;
         uint8_t* data;
         size_t dataSize;
-        bool(*callback)() = nullptr;
+        bool(*callback)(bool) = nullptr;
 };
 
 enum UnityPicoCommsPacketEnum{
@@ -65,7 +65,7 @@ enum UnityPicoCommsPacketEnum{
 
 class OutputMessageObject{
     public:
-        void activate(uint8_t _messageType, uint8_t* _buf, size_t _size, bool(*callback)()){
+        void activate(uint8_t _messageType, uint8_t* _buf, size_t _size, bool(*callback)(bool)){
             buf = _buf;
             size = _size;
             activated = true;
@@ -203,7 +203,7 @@ class UnityPicoComms{
             else{
             }
             for(int i = 0; i < numActiveOutputObjects; i++){
-                if(activeOutputObjects[i]->update()){ // update will only return true once, but updated will stay true until correct confirmation is received, hence the separate if statements
+                if(activeOutputObjects[i]->update(false)){ // update will only return true once, but updated will stay true until correct confirmation is received, hence the separate if statements
                     activeOutputObjects[i]->updated = true;
                 }
                 if(millis() - activeOutputObjects[i]->timer > activeOutputObjects[i]->automaticResendTime){
