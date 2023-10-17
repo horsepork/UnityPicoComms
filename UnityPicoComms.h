@@ -79,7 +79,7 @@ class OutputMessageObject{
         uint8_t messageType;
         uint8_t* buf = nullptr;
         size_t size;
-        bool(*update)() = nullptr;
+        bool(*update)(bool) = nullptr;
         uint32_t timer;
         uint16_t automaticResendTime = 1000;
         int16_t expectedMessageConfirmation = -2;
