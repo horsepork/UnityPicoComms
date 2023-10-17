@@ -173,6 +173,9 @@ class UnityPicoComms{
             digitalWrite(LED_PIN, LOW);
             connected = true;
             rp2040.wdt_begin(watchdogTimerLength);
+            for(int i = 0; i < numActiveOutputObjects; i++){
+                activeOutputObjects[i]->update(true);
+            }
         }
 
         void begin(const char* _id, uint32_t _baudRate){
@@ -224,7 +227,7 @@ class UnityPicoComms{
             outputObjects[messageType].updated = true;
         }
 
-        void addOutput(uint8_t messageType, uint8_t* buf, size_t size, bool(*callback)()){
+        void addOutput(uint8_t messageType, uint8_t* buf, size_t size, bool(*callback)(bool)){
             if(messageType > 31 || outputObjects[messageType].activated || inputObjects[messageType].activated){
                 Error();
             }
