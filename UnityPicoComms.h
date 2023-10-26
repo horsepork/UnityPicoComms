@@ -114,6 +114,7 @@ class InputMessageObject{
             onUpdate = FastLED_Update;
             activated = true;
         }
+        
         void update(const uint8_t *_buf, size_t _size){
             // this is a bit of a mess and will not work for multiple separate
             // FastLED instances on a single input object. Which probably is fine
@@ -129,6 +130,10 @@ class InputMessageObject{
                 }
             }
             onUpdate();
+        }
+
+        void setCallback(void(*_callback)()){
+            onUpdate = _callback;
         }
 };
 
@@ -199,8 +204,6 @@ class UnityPicoComms{
             rp2040.wdt_reset();
             if(isConnected()){
                 packetSerial.update(); // get incoming Unity packets
-            }
-            else{
             }
             for(int i = 0; i < numActiveOutputObjects; i++){
                 if(activeOutputObjects[i]->update(false)){ // update will only return true once, but updated will stay true until correct confirmation is received, hence the separate if statements
@@ -334,6 +337,7 @@ class UnityPicoComms{
                 ID_Buf[i] = PicoID[i];
             }
             sendPacket(0, ID_Buf, ID_Length, ID_MSG);
+            Serial.println("Sending ID Msg");
         }
 
         void resendOutputPackets(){
