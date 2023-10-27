@@ -148,6 +148,8 @@ class UnityPicoComms{
         bool connected = false;
         uint16_t watchdogTimerLength = 3000;
         Stream* SerialPort = &Serial;
+        bool pauseForIDMsgOutput = false;
+        uint32_t IDMsgTimer;
     
     public:
         PacketSerial_<COBS, 0, receiveBufferSize> packetSerial;
@@ -215,9 +217,16 @@ class UnityPicoComms{
                 if(activeOutputObjects[i]->updated){
                     if(millis() - activeOutputObjects[i]->timer < TIME_BETWEEN_MESSAGES) continue;
                     UnityPicoCommsPacketEnum outputPacketType = activeOutputObjects[i]->size > 255 ? LARGE_DATA_PACKET : DATA_PACKET;
-                    sendPacket(activeOutputObjects[i]->messageType, activeOutputObjects[i]->buf, activeOutputObjects[i]->size, outputPacketType);
-                    activeOutputObjects[i]->timer = millis();
-                    activeOutputObjects[i]->automaticResendTime = 900 + random(200);
+                    if(pauseForIDMsgOutput){
+                        if(millis() - IDMsgTimer > 100){
+                            pauseForIDMsgOutput = false;
+                        }
+                    }
+                    else{
+                        sendPacket(activeOutputObjects[i]->messageType, activeOutputObjects[i]->buf, activeOutputObjects[i]->size, outputPacketType);
+                        activeOutputObjects[i]->timer = millis();
+                        activeOutputObjects[i]->automaticResendTime = 900 + random(200);
+                    }
                 }
             }
             if(FastLED_Updated){
@@ -338,6 +347,8 @@ class UnityPicoComms{
             }
             sendPacket(0, ID_Buf, ID_Length, ID_MSG);
             Serial.println("Sending ID Msg");
+            pauseForIDMsgOutput = true;
+            IDMsgTimer = millis();
         }
 
         void resendOutputPackets(){
