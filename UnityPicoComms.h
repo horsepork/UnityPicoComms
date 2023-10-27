@@ -215,17 +215,20 @@ class UnityPicoComms{
                     activeOutputObjects[i]->updated = true;
                 }
                 if(activeOutputObjects[i]->updated){
+                    
                     if(millis() - activeOutputObjects[i]->timer < TIME_BETWEEN_MESSAGES) continue;
+                    
                     UnityPicoCommsPacketEnum outputPacketType = activeOutputObjects[i]->size > 255 ? LARGE_DATA_PACKET : DATA_PACKET;
                     if(pauseForIDMsgOutput){
                         if(millis() - IDMsgTimer > 100){
                             pauseForIDMsgOutput = false;
+                            
                         }
                     }
                     else{
                         sendPacket(activeOutputObjects[i]->messageType, activeOutputObjects[i]->buf, activeOutputObjects[i]->size, outputPacketType);
                         activeOutputObjects[i]->timer = millis();
-                        activeOutputObjects[i]->automaticResendTime = 900 + random(200);
+                        activeOutputObjects[i]->automaticResendTime = 1000 + random(1000);
                     }
                 }
             }
