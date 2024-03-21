@@ -11,7 +11,7 @@
 // for context, a 72 byte array would take between 2 and 4 microseconds to update at 120MHz (assuming 4 or 5 cpu cycles per byte set)
 // Even if I'm off by an order of magnitude, speed is probably not going to be a concern
 
-#define TIME_BETWEEN_REATTEMPTED_MESSAGE 20 // give the other side time to process
+#define TIME_BETWEEN_REATTEMPTED_MESSAGE 50 // give the other side time to process
 #define TIME_BETWEEN_FULL_PACKET_RESEND 5000 // plus some fuzzing. TODO -- determine if needed
 #define LED_PIN 25
 
