@@ -11,13 +11,13 @@
 // for context, a 72 byte array would take between 2 and 4 microseconds to update at 120MHz (assuming 4 or 5 cpu cycles per byte set)
 // Even if I'm off by an order of magnitude, speed is probably not going to be a concern
 
-#define TIME_BETWEEN_REATTEMPTED_MESSAGE 50 // give the other side time to process
+#define TIME_BETWEEN_REATTEMPTED_MESSAGE 20 // give the other side time to process
 #define TIME_BETWEEN_FULL_PACKET_RESEND 5000 // plus some fuzzing. TODO -- determine if needed
 #define LED_PIN 25
 
 #define ID_REQUEST_MESSAGE 0b00001111
 #define MESSAGE_TYPE_MASK 0b00001111
-#define PICO_DESIGNATOR_MASK 0b01110000 // value used if Pico is not connected through a hub
+#define PICO_DESIGNATOR_MASK 0b01110000
 #define DEBUG_MESSAGE 0b10000000 
 #define SMALL_INDEX_MASK  0b01111111
 #define PING_MASK 0b10001111 // note that ping is a combo of debug and id request, so need to make sure that those are not errantly processed on a ping
@@ -48,18 +48,9 @@ struct PacketHeader{
 PacketHeader InputPacketHeader;
 
 class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding PicoInputPacket on the Unity side
-    public:
-        OutputPacket(const char* _name, uint8_t _messageType, size_t _outputBufferSize, void(*_update)(OutputPacket&)){
-            name = _name;
-            messageType = _messageType;
-            outputBufferSize = _outputBufferSize;
-            update = _update;
-            IndexOfLastChangedBufferElement = outputBufferSize;
-            outputBuffer = new uint8_t[outputBufferSize];
-            for(int i = 0; i < outputBufferSize; i++){
-                outputBuffer[i] = 0;
-            }
-        }
+    public:        
+        
+        bool initialized = false;
         const char* name = nullptr;
         uint8_t messageType;
         size_t outputBufferSize;
@@ -77,36 +68,61 @@ class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding
         // decide if necessary or helpful to have buffer update function which can receive an array
         // currently updates are down a byte at a time, with one function call per byte
 
+        void initialize(const char* _name, uint8_t _messageType, size_t _outputBufferSize, void(*_update)(OutputPacket&)){
+            name = _name;
+            messageType = _messageType;
+            outputBufferSize = _outputBufferSize;
+            update = _update;
+            IndexOfLastChangedBufferElement = outputBufferSize - 1;
+            outputBuffer = new uint8_t[outputBufferSize];
+            for(int i = 0; i < outputBufferSize; i++){
+                outputBuffer[i] = 0;
+            }
+            initialized = true;
+        }
+
         void updateBufferAtByte(int byteIndex, uint8_t newByte)
         {
             if(byteIndex >= outputBufferSize){
-                printf("Error. ByteIndex %i is too large for %s. Max size is %i\n", byteIndex, name, outputBufferSize);
+                // printf("Error. ByteIndex %i is too large for %s. Max size is %i\n", byteIndex, name, outputBufferSize);
                 return;
             }
             if (outputBuffer[byteIndex] != newByte)
             {
                 outputBuffer[byteIndex] = newByte;
                 doUpdatesNeedToBeSent = true;
-                sendPacketReattemptTimer = millis() - TIME_BETWEEN_REATTEMPTED_MESSAGE; // so any new updates will send right away. TODO -- verify this is not bad
+                setOutputBufferChecksum();
+                for(int i = 0; i < outputBufferSize; i++){
+
+                }
+                sendPacketReattemptTimer = millis() + TIME_BETWEEN_REATTEMPTED_MESSAGE; // so any new updates will send right away. TODO -- verify this is not bad
                 updateMinAndMaxBufferIndices(byteIndex);
             }
         }
 
         void updateBufferAtByteAndBit(int byteIndex, uint8_t bitIndex, bool bitState){
             if(byteIndex >= outputBufferSize){
-                printf("Error. ByteIndex %i is too large for %s. Max size is %i\n", byteIndex, name, outputBufferSize);
+                // printf("Error. ByteIndex %i is too large for %s. Max size is %i\n", byteIndex, name, outputBufferSize);
                 return;
             }
             if(bitIndex > 7){
-                printf("Error. Bit index of %i passed to %s\n", bitIndex, name);
+                // printf("Error. Bit index of %i passed to %s\n", bitIndex, name);
                 return;
             }
             uint8_t prevByteState = outputBuffer[byteIndex];
             bitWrite(outputBuffer[byteIndex], bitIndex, bitState);
             if(outputBuffer[byteIndex] != prevByteState){
+                setOutputBufferChecksum();
                 doUpdatesNeedToBeSent = true;
-                sendPacketReattemptTimer = millis() - TIME_BETWEEN_REATTEMPTED_MESSAGE; // so any new updates will send right away. TODO -- verify this is not bad
+                sendPacketReattemptTimer = millis() + TIME_BETWEEN_REATTEMPTED_MESSAGE; // so any new updates will send right away. TODO -- verify this is not bad
                 updateMinAndMaxBufferIndices(byteIndex);
+            }
+        }
+
+        void setOutputBufferChecksum(){ // the expected value to be received
+            outputBufferChecksum = 0;
+            for(int i = 0; i < outputBufferSize; i++){
+                outputBufferChecksum += outputBuffer[i];
             }
         }
 
@@ -118,14 +134,14 @@ class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding
 
         void resetMinAndMaxBufferIndices()
         {
-            IndexOfFirstChangedBufferElement = outputBufferSize;
+            IndexOfFirstChangedBufferElement = outputBufferSize - 1;
             IndexOfLastChangedBufferElement = 0;
         }
 
         void makeBufferIndicesCoverFullPacket()
         {
             IndexOfFirstChangedBufferElement = 0;
-            IndexOfLastChangedBufferElement = outputBufferSize;
+            IndexOfLastChangedBufferElement = outputBufferSize - 1;
         }
 
         void verifyChecksum()
@@ -139,6 +155,7 @@ class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding
             }
             else
             {
+                // printf("checksum mismatch. Got %i but expected %i\n", InputPacketHeader.Checksum, outputBufferChecksum);
                 doUpdatesNeedToBeSent = true;
                 makeBufferIndicesCoverFullPacket(); // so that we resend the entire packet
             }
@@ -158,7 +175,8 @@ class InputPacket{ // Equivalent to PicoInputPacket. Will have a corresponding P
         uint8_t* inputBuffer = nullptr;
         bool updated = false;
         uint8_t inputBufferChecksum = 0;
-        InputPacket(const char* _name, uint8_t _messageType, size_t _inputBufferSize, void(*_onUpdate)(uint8_t*, size_t)){
+        bool initialized = false;
+        void initialize(const char* _name, uint8_t _messageType, size_t _inputBufferSize, void(*_onUpdate)(uint8_t*, size_t)){
             name = _name;
             messageType = _messageType;
             inputBufferSize = _inputBufferSize;
@@ -169,6 +187,7 @@ class InputPacket{ // Equivalent to PicoInputPacket. Will have a corresponding P
             for(int i = 0; i < inputBufferSize; i++){
                 inputBuffer[i] = 0;
             }
+            initialized = true;
         }
 
         // there could be room to further optimize by tracking the indices that were updated
@@ -178,11 +197,11 @@ class InputPacket{ // Equivalent to PicoInputPacket. Will have a corresponding P
 
             if (InputPacketHeader.LastIndex >= inputBufferSize)
             {
-                printf("Error: last index exceeds bounds of inputBuffer on %s. Incoming last index is %i but inputBuffer size is %i\n", name, InputPacketHeader.LastIndex, inputBufferSize);
+                // printf("Error: last index exceeds bounds of inputBuffer on %s. Incoming last index is %i but inputBuffer size is %i\n", name, InputPacketHeader.LastIndex, inputBufferSize);
                 return false;
             }
             bool valuesChanged = false;
-            for (int i = InputPacketHeader.FirstIndex; i < InputPacketHeader.LastIndex; i++)
+            for (int i = InputPacketHeader.FirstIndex; i <= InputPacketHeader.LastIndex; i++)
             {
                 if (inputBuffer[i] != IncomingPacket[i + InputPacketHeader.DataStartOffset])
                 {
@@ -194,10 +213,15 @@ class InputPacket{ // Equivalent to PicoInputPacket. Will have a corresponding P
             {
                 onUpdate(inputBuffer, inputBufferSize);
                 inputBufferChecksum = 0; 
+                // Serial.print("input buffer value: ");
                 for(int i = 0; i < inputBufferSize; i++){
+                    // Serial.print((int)inputBuffer[i]);
+                    // Serial.print(" ");
                     inputBufferChecksum += inputBuffer[i];
                 }
-            }
+                // Serial.print("\nnew input buffer checksum: ");
+                // Serial.println(inputBufferChecksum);
+;            }
             return true;
         }
 };
@@ -211,23 +235,20 @@ class UnityPicoComms{
         uint32_t baudRate = 921600;
         uint16_t watchdogTimerLength = 3000;
         HardwareSerial* SerialPort = &Serial1;
+        InputPacket inputPackets[MAX_NUM_INPUT_AND_OUTPUT_OBJECTS];
+        OutputPacket outputPackets[MAX_NUM_INPUT_AND_OUTPUT_OBJECTS];
+        InputPacket *activeInputPackets[MAX_NUM_INPUT_AND_OUTPUT_OBJECTS];
+        OutputPacket *activeOutputPackets[MAX_NUM_INPUT_AND_OUTPUT_OBJECTS];
 
-        InputPacket** inputPackets = new InputPacket*[MAX_NUM_INPUT_AND_OUTPUT_OBJECTS];
-        OutputPacket** outputPackets = new OutputPacket*[MAX_NUM_INPUT_AND_OUTPUT_OBJECTS];
+
+        
         uint8_t numInputPackets = 0;
         uint8_t numOutputPackets = 0;
-        
-    
+
     public:
 
         UnityPicoComms(const char* _PicoID){
             PicoID = _PicoID;
-            for(int i = 0; i < numInputPackets; i++){
-                inputPackets[i] = nullptr;
-            }
-            for(int i = 0; i < numOutputPackets; i++){
-                outputPackets[i] = nullptr;
-            }
         }
 
         void setSerialPort(HardwareSerial* port){
@@ -239,7 +260,7 @@ class UnityPicoComms{
             SerialPort->begin(baudRate);
             rp2040.wdt_begin(watchdogTimerLength);
             for(int i = 0; i < numOutputPackets; i++){
-                outputPackets[i]->update(*outputPackets[i]);
+                activeOutputPackets[i]->update(*activeOutputPackets[i]);
             }
         }
 
@@ -257,7 +278,6 @@ class UnityPicoComms{
 
         void update(){
             rp2040.wdt_reset();
-
             handleIncomingPackets();
             handleOutputPackets();
             
@@ -270,10 +290,23 @@ class UnityPicoComms{
                     return;
                 }
                 int incomingPacketSize = _decodeBufferAndReturnSize(SerialPort, IncomingPacket);
-
-                if(incomingPacketSize == 0){
+                if(incomingPacketSize < 5){
+                    // Serial.print("wrong packet size? ");
+                    // Serial.println(incomingPacketSize);
+                    // for(int i = 0; i < incomingPacketSize; i++){
+                    //     Serial.print((int)IncomingPacket[i]);
+                    //     Serial.print(" ");
+                    // }
+                    // Serial.println();
                     continue;
                 }
+                // printf("incoming packet of size %i: ", incomingPacketSize);
+                // for(int i = 0; i < incomingPacketSize; i++){
+                //     Serial.print((int)IncomingPacket[i]);
+                //     Serial.print(" ");
+                // }
+                // Serial.println();
+                
                 if(!ValidateIncomingPacket()){
                     continue;
                 }
@@ -316,11 +349,13 @@ class UnityPicoComms{
                 _checkSum += IncomingPacket[i];
             }
 
-            if (_checkSum != InputPacketHeader.Checksum) { return false; }
+            if (_checkSum != InputPacketHeader.Checksum) {
+                // printf("got %i, calculated %i\n", InputPacketHeader.Checksum, _checkSum);
+                return false;
+            }
 
             InputPacketHeader.MessageType = IncomingPacket[0] & MESSAGE_TYPE_MASK;
             InputPacketHeader.PicoDesignatorCode = IncomingPacket[0] & PICO_DESIGNATOR_MASK;
-
             return true;
         }
 
@@ -340,17 +375,17 @@ class UnityPicoComms{
             }
             
             for(int i = 0; i < numInputPackets; i++){
-                if(inputPackets[i]->messageType == InputPacketHeader.MessageType){
-                    if(inputPackets[i]->updateInputBuffer()){
-                        SendPacket(inputPackets[i]->messageType, picoDesignatorCode, inputPackets[i]->inputBufferChecksum);
+                if(activeInputPackets[i]->messageType == InputPacketHeader.MessageType){
+                    if(activeInputPackets[i]->updateInputBuffer()){
+                        SendPacket(activeInputPackets[i]->messageType, picoDesignatorCode, activeInputPackets[i]->inputBufferChecksum);
                     }
                     return;
                 }
             }
             
             for(int i = 0; i < numOutputPackets; i++){
-                if(outputPackets[i]->messageType == InputPacketHeader.MessageType){
-                    outputPackets[i]->verifyChecksum();
+                if(activeOutputPackets[i]->messageType == InputPacketHeader.MessageType){
+                    activeOutputPackets[i]->verifyChecksum();
                     return;
                 }
             }
@@ -358,85 +393,71 @@ class UnityPicoComms{
 
         void handleOutputPackets(){
             for(int i = 0; i < numOutputPackets; i++){
-                outputPackets[i]->update(*outputPackets[i]);
+                activeOutputPackets[i]->update(*activeOutputPackets[i]);
                 // --- Comment out if we don't want to occasionally resend full pacekts ---
-                if(outputPackets[i]->isTimeToResendFullPacket()){
-                    outputPackets[i]->doUpdatesNeedToBeSent = true;
-                    outputPackets[i]->makeBufferIndicesCoverFullPacket();
-                }
+                // if(activeOutputPackets[i]->isTimeToResendFullPacket()){
+                //     activeOutputPackets[i]->doUpdatesNeedToBeSent = true;
+                //     activeOutputPackets[i]->makeBufferIndicesCoverFullPacket();
+                // }
                 // ------------------------------------------------------------------------
 
-                if(outputPackets[i]->doUpdatesNeedToBeSent){
-                    
-                    if(millis() - outputPackets[i]->sendPacketReattemptTimer < TIME_BETWEEN_REATTEMPTED_MESSAGE) continue;
+                if(activeOutputPackets[i]->doUpdatesNeedToBeSent){
+                    if(millis() - activeOutputPackets[i]->sendPacketReattemptTimer < TIME_BETWEEN_REATTEMPTED_MESSAGE) continue;
                     
                     SendPacket(
-                        outputPackets[i]->messageType,
+                        activeOutputPackets[i]->messageType,
                         picoDesignatorCode,
-                        outputPackets[i]->IndexOfFirstChangedBufferElement,
-                        outputPackets[i]->IndexOfLastChangedBufferElement,
-                        outputPackets[i]->outputBuffer
+                        activeOutputPackets[i]->IndexOfFirstChangedBufferElement,
+                        activeOutputPackets[i]->IndexOfLastChangedBufferElement,
+                        activeOutputPackets[i]->outputBuffer
                     );
 
-                    outputPackets[i]->sendPacketReattemptTimer = millis();
+                    activeOutputPackets[i]->sendPacketReattemptTimer = millis();
                 }
             }
         }
 
         void respondToPing(){
+            // Serial.println("Ping!");
             SendPacket(PING_MASK + picoDesignatorCode, 0); // 0 because no data, just resonding to ping
         }
 
 
         void addOutputPacket(const char* _name, uint8_t _messageType, size_t _size, void(*_update)(OutputPacket &outputPacket)){
-            if(_messageType >= MAX_NUM_INPUT_AND_OUTPUT_OBJECTS){
+            if(!isMessageTypeAvailable(_messageType, _name)){
                 Error();
             }
-            for(int i = 0; i < numInputPackets; i++){
-                if(inputPackets[i] != nullptr){
-                    if(inputPackets[i]->messageType == _messageType){
-                        printf("Error. Input packet %s already has messageType %i\n", inputPackets[i]->name, _messageType);
-                        Error();
-                    }
-                }
-            }
-            for(int i = 0; i < numOutputPackets; i++){
-                if(outputPackets[i] != nullptr){
-                    if(outputPackets[i]->messageType == _messageType){
-                        printf("Error. Output packet %s already has messageType %i\n", outputPackets[i]->name, _messageType);
-                        Error();
-                    }
-                }
-                OutputPacket newOutputPacket(_name, _messageType, _size, _update);
-                outputPackets[numOutputPackets] = &newOutputPacket;
-                break;
-            }
-            numOutputPackets++;
+            outputPackets[_messageType].initialize(_name, _messageType, _size, _update);
+            activeOutputPackets[numOutputPackets++] = &outputPackets[_messageType];
         }
 
         void addInputPacket(const char* _name, uint8_t _messageType, size_t _size, void(*callback)(uint8_t*, size_t)){
-            if(_messageType >= MAX_NUM_INPUT_AND_OUTPUT_OBJECTS){
+            if(!isMessageTypeAvailable(_messageType, _name)){
                 Error();
             }
+            inputPackets[_messageType].initialize(_name, _messageType, _size, callback);
+            activeInputPackets[numInputPackets++] = &inputPackets[_messageType];
+        }
+
+        bool isMessageTypeAvailable(byte _messageType, const char *_name){
+            if(_messageType >= MAX_NUM_INPUT_AND_OUTPUT_OBJECTS) return false;
+
             for(int i = 0; i < numInputPackets; i++){
-                if(inputPackets[i] != nullptr){
-                    if(inputPackets[i]->messageType == _messageType){
-                        printf("Error. Input packet %s already has messageType %i\n", inputPackets[i]->name, _messageType);
-                        Error();
-                    }
+                if(activeInputPackets[i]->messageType == _messageType){
+                    // printf("Error adding %s. Input packet %s already has messageType %i\n", _name, activeInputPackets[i]->name, _messageType);
+                    return false;
                 }
             }
             for(int i = 0; i < numOutputPackets; i++){
-                if(outputPackets[i] != nullptr){
-                    if(outputPackets[i]->messageType == _messageType){
-                        printf("Error. Output packet %s already has messageType %i\n", outputPackets[i]->name, _messageType);
-                        Error();
-                    }
+                if(activeOutputPackets[i]->messageType == _messageType){
+                    // printf("Error adding %s. Output packet %s already has messageType %i\n", _name, activeOutputPackets[i]->name, _messageType);
+                    return false;
                 }
-                InputPacket newInputPacket(_name, _messageType, _size, callback);
             }
-            numInputPackets++;
+            return true;
         }
+
+
 
         const char* getPicoID(){
             return PicoID;
@@ -454,7 +475,7 @@ class UnityPicoComms{
                 OutgoingPacket[3] = firstIndex >> 7;
                 dataOffset++;
             }
-            OutgoingPacket[3 + dataOffset] = firstIndex & SMALL_INDEX_MASK;
+            OutgoingPacket[3 + dataOffset] = lastIndex & SMALL_INDEX_MASK;
             if (lastIndex > SMALL_INDEX_MASK)
             {
                 OutgoingPacket[4 + dataOffset] = lastIndex >> 7;
@@ -463,7 +484,8 @@ class UnityPicoComms{
             byte checksum = 0;
             for (int i = firstIndex; i <= lastIndex; i++)
             {
-                OutgoingPacket[dataOffset + defaultHeaderSize + i] = buffer[i];
+                OutgoingPacket[dataOffset + defaultHeaderSize + i - firstIndex] = buffer[i];
+
                 checksum += buffer[i];
             }
             OutgoingPacket[1] = checksum;
