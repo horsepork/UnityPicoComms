@@ -58,10 +58,10 @@ class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding
 
         uint16_t IndexOfFirstChangedBufferElement = 0;
         uint16_t IndexOfLastChangedBufferElement;
-        bool doUpdatesNeedToBeSent = false;
+        bool doUpdatesNeedToBeSent = true;
         uint32_t sendPacketReattemptTimer;
         uint32_t fullPacketResendTimer; // TODO -- determine if necessary
-        uint16_t timeBeforeFullPacketResend; // TODO -- determine if necessary
+        uint16_t timeBeforeFullPacketResend = 5000; // TODO -- determine if necessary
         uint8_t outputBufferChecksum;
 
         // decide if necessary or helpful to have buffer update function which can receive an array
@@ -94,7 +94,7 @@ class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding
                 for(int i = 0; i < outputBufferSize; i++){
 
                 }
-                sendPacketReattemptTimer = millis() + TIME_BETWEEN_REATTEMPTED_MESSAGE; // so any new updates will send right away. TODO -- verify this is not bad
+                sendPacketReattemptTimer = millis() - TIME_BETWEEN_REATTEMPTED_MESSAGE; // so any new updates will send right away. TODO -- verify this is not bad
                 updateMinAndMaxBufferIndices(byteIndex);
             }
         }
@@ -113,7 +113,7 @@ class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding
             if(outputBuffer[byteIndex] != prevByteState){
                 setOutputBufferChecksum();
                 doUpdatesNeedToBeSent = true;
-                sendPacketReattemptTimer = millis() + TIME_BETWEEN_REATTEMPTED_MESSAGE; // so any new updates will send right away. TODO -- verify this is not bad
+                sendPacketReattemptTimer = millis() - TIME_BETWEEN_REATTEMPTED_MESSAGE; // so any new updates will send right away. TODO -- verify this is not bad
                 updateMinAndMaxBufferIndices(byteIndex);
             }
         }
@@ -189,12 +189,11 @@ class InputPacket{ // Equivalent to PicoInputPacket. Will have a corresponding P
             }
             initialized = true;
         }
-
+        
         // there could be room to further optimize by tracking the indices that were updated
         // could be helpful so that neopixel values only need to be set if the inputBuffer changed
         bool updateInputBuffer()
         {
-
             if (PacketHeader.LastIndex >= inputBufferSize)
             {
                 // printf("Error: last index exceeds bounds of inputBuffer on %s. Incoming last index is %i but inputBuffer size is %i\n", name, PacketHeader.LastIndex, inputBufferSize);
@@ -203,9 +202,9 @@ class InputPacket{ // Equivalent to PicoInputPacket. Will have a corresponding P
             bool valuesChanged = false;
             for (int i = PacketHeader.FirstIndex; i <= PacketHeader.LastIndex; i++)
             {
-                if (inputBuffer[i] != IncomingPacket[i + PacketHeader.DataStartOffset])
+                if (inputBuffer[i] != IncomingPacket[i - PacketHeader.FirstIndex + PacketHeader.DataStartOffset])
                 {
-                    inputBuffer[i] = IncomingPacket[i + PacketHeader.DataStartOffset];
+                    inputBuffer[i] = IncomingPacket[i - PacketHeader.FirstIndex + PacketHeader.DataStartOffset];
                     valuesChanged = true;
                 }
             }
@@ -213,14 +212,10 @@ class InputPacket{ // Equivalent to PicoInputPacket. Will have a corresponding P
             {
                 onUpdate(inputBuffer, inputBufferSize);
                 inputBufferChecksum = 0; 
-                // Serial.print("input buffer value: ");
                 for(int i = 0; i < inputBufferSize; i++){
-                    // Serial.print((int)inputBuffer[i]);
-                    // Serial.print(" ");
                     inputBufferChecksum += inputBuffer[i];
                 }
-                // Serial.print("\nnew input buffer checksum: ");
-                // Serial.println(inputBufferChecksum);
+                // printf("new input buffer checksum: %i\n", inputBufferChecksum);
 ;            }
             return true;
         }
@@ -309,7 +304,6 @@ class UnityPicoComms{
                 // Serial.println();
                 
                 if(!ValidateIncomingPacket()){
-                    printPacketHeader();
                     // Serial.println("invalid packet");
                     continue;
                 }
@@ -319,7 +313,7 @@ class UnityPicoComms{
                 if(picoDesignatorCode != _designatorCode){
                     picoDesignatorCode = _designatorCode;
                     uint8_t readableDesignatorCode = picoDesignatorCode >> 4;
-                    printf("Pico designator code: %i\n", readableDesignatorCode);
+                    // printf("Pico designator code: %i\n", readableDesignatorCode);
                 }
 
                 ProcessIncomingPacket(incomingPacketSize);
@@ -327,9 +321,10 @@ class UnityPicoComms{
         }
 
         void printPacketHeader(){
-                printf("----\nmessage type: %i, designator code: %i, first index: %i,\nlast index: %i, data size: %i, data start offset: %i\n----\n",
+                printf("\n----\nmessage type: %i, designator code: %i, checksum: %i,\nfirst index: %i, last index: %i, data size: %i, data start offset: %i\n----\n",
                     PacketHeader.MessageType,
                     PacketHeader.PicoDesignatorCode,
+                    PacketHeader.Checksum,
                     PacketHeader.FirstIndex,
                     PacketHeader.LastIndex,
                     PacketHeader.DataSize,
@@ -367,7 +362,7 @@ class UnityPicoComms{
             }
 
             if (_checkSum != PacketHeader.Checksum) {
-                printf("got %i, calculated %i\n", PacketHeader.Checksum, _checkSum);
+                // printf("got %i, calculated %i\n", PacketHeader.Checksum, _checkSum);
                 return false;
             }
 
@@ -412,10 +407,10 @@ class UnityPicoComms{
             for(int i = 0; i < numOutputPackets; i++){
                 activeOutputPackets[i]->update(*activeOutputPackets[i]);
                 // --- Comment out if we don't want to occasionally resend full pacekts ---
-                // if(activeOutputPackets[i]->isTimeToResendFullPacket()){
-                //     activeOutputPackets[i]->doUpdatesNeedToBeSent = true;
-                //     activeOutputPackets[i]->makeBufferIndicesCoverFullPacket();
-                // }
+                if(activeOutputPackets[i]->isTimeToResendFullPacket()){
+                    activeOutputPackets[i]->doUpdatesNeedToBeSent = true;
+                    activeOutputPackets[i]->makeBufferIndicesCoverFullPacket();
+                }
                 // ------------------------------------------------------------------------
 
                 if(activeOutputPackets[i]->doUpdatesNeedToBeSent){
@@ -435,7 +430,7 @@ class UnityPicoComms{
         }
 
         void respondToPing(){
-            Serial.println("Ping!");
+            // Serial.println("Ping!");
             SendPacket(PING_MASK + picoDesignatorCode, 0); // 0 because no data, just resonding to ping
         }
 
