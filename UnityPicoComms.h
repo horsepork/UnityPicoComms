@@ -353,16 +353,20 @@ class UnityPicoComms{
             PacketHeader.DataStartOffset = defaultHeaderSize + offsetIndex;
 
             PacketHeader.DataSize = PacketHeader.LastIndex - PacketHeader.FirstIndex + 1;
-            byte _checkSum = 0;
-            
+            uint8_t _checkSum = 0;
+            uint8_t _dataSize = 0;
             for (int i = PacketHeader.DataStartOffset; i < PacketHeader.DataStartOffset + PacketHeader.DataSize; i++)
             {
                 // printf("incoming packet %i: %i\n", i, IncomingPacket[i]);
                 _checkSum += IncomingPacket[i];
+                _dataSize++;
             }
 
             if (_checkSum != PacketHeader.Checksum) {
                 // printf("got %i, calculated %i\n", PacketHeader.Checksum, _checkSum);
+                return false;
+            }
+            else if(_dataSize != PacketHeader.DataSize){
                 return false;
             }
 
