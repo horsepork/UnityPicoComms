@@ -354,7 +354,7 @@ class UnityPicoComms{
 
             PacketHeader.DataSize = PacketHeader.LastIndex - PacketHeader.FirstIndex + 1;
             uint8_t _checkSum = 0;
-            uint8_t _dataSize = 0;
+            uint16_t _dataSize = 0;
             for (int i = PacketHeader.DataStartOffset; i < PacketHeader.DataStartOffset + PacketHeader.DataSize; i++)
             {
                 // printf("incoming packet %i: %i\n", i, IncomingPacket[i]);
