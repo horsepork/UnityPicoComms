@@ -303,7 +303,7 @@ class UnityPicoComms{
                 // }
                 // Serial.println();
                 
-                if(!ValidateIncomingPacket()){
+                if(!ValidateIncomingPacket(incomingPacketSize)){
                     // Serial.println("invalid packet");
                     continue;
                 }
@@ -332,7 +332,7 @@ class UnityPicoComms{
                 );
         }
 
-        bool ValidateIncomingPacket(){
+        bool ValidateIncomingPacket(int incomingPacketSize){
             int offsetIndex = 0;
             const int defaultHeaderSize = 4;
             PacketHeader.Checksum = IncomingPacket[1];
@@ -349,36 +349,41 @@ class UnityPicoComms{
                 offsetIndex++;
             }
 
-            if (PacketHeader.FirstIndex > PacketHeader.LastIndex) { return false; }
+            if (PacketHeader.FirstIndex > PacketHeader.LastIndex) {
+                printf("First index (%i) is greater than last index (%i)\n", PacketHeader.FirstIndex, PacketHeader.LastIndex);
+                return false;
+            }
             PacketHeader.DataStartOffset = defaultHeaderSize + offsetIndex;
 
             PacketHeader.DataSize = PacketHeader.LastIndex - PacketHeader.FirstIndex + 1;
             uint8_t _checkSum = 0;
-            uint16_t _dataSize = 0;
             for (int i = PacketHeader.DataStartOffset; i < PacketHeader.DataStartOffset + PacketHeader.DataSize; i++)
             {
-                // printf("incoming packet %i: %i\n", i, IncomingPacket[i]);
+                // if(IncomingPacket[i]){
+                //     printf("incoming packet %i: %i\n", i, IncomingPacket[i]);
+                // }
                 _checkSum += IncomingPacket[i];
-                _dataSize++;
             }
+            
+            bool valid = true;
 
-            if (_checkSum != PacketHeader.Checksum) {
-                // printf("got %i, calculated %i\n", PacketHeader.Checksum, _checkSum);
-                return false;
+            if(incomingPacketSize != PacketHeader.DataSize + PacketHeader.DataStartOffset){
+                printf("Wrong size? Header says %i but cobs says %i\n", (PacketHeader.DataSize + PacketHeader.DataStartOffset), incomingPacketSize);
+                valid = false;
             }
-            else if(_dataSize != PacketHeader.DataSize){
-                return false;
+            if (_checkSum != PacketHeader.Checksum) {
+                printf("got %i for checksum, calculated %i\n", PacketHeader.Checksum, _checkSum);
+                valid = false;
             }
 
             PacketHeader.MessageType = IncomingPacket[0] & MESSAGE_TYPE_MASK;
             PacketHeader.PicoDesignatorCode = IncomingPacket[0] & PICO_DESIGNATOR_MASK;
-            return true;
+            return valid;
         }
 
 
         void ProcessIncomingPacket(int incomingPacketSize)
         {
-            
             if ((IncomingPacket[0] & PING_MASK) == PING_MASK)
             {
                 respondToPing();
@@ -434,7 +439,7 @@ class UnityPicoComms{
         }
 
         void respondToPing(){
-            // Serial.println("Ping!");
+            Serial.println("Ping from Unity");
             SendPacket(PING_MASK + picoDesignatorCode, 0); // 0 because no data, just resonding to ping
         }
 
@@ -531,6 +536,10 @@ class UnityPicoComms{
                 ID_Buf[i] = PicoID[i];
             }
             SendPacket(ID_REQUEST_MESSAGE + picoDesignatorCode, 0, ID_Length, ID_Buf);
+            Serial.println("Sending ID request");
+            for(int i = 0; i < numOutputPackets; i++){
+                activeOutputPackets[i]->doUpdatesNeedToBeSent = true;
+            }
         }
 
         void Debug(const char* debugString){
