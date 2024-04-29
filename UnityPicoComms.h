@@ -9,7 +9,7 @@
 // output objects (objects, like the actual buttons, not packets) should probably always update their states.
 // This removes the need for "forceUpdate" in the output object callback
 // for context, a 72 byte array would take between 2 and 4 microseconds to update at 120MHz (assuming 4 or 5 cpu cycles per byte set)
-// Even if I'm off by an order of magnitude, speed is probably not going to be a concern
+// Even if I'm off by an order of magnitude (or 2), speed is probably not going to be a concern
 
 #define TIME_BETWEEN_REATTEMPTED_MESSAGE 50 // give the other side time to process
 #define TIME_BETWEEN_FULL_PACKET_RESEND 5000 // plus some fuzzing. TODO -- determine if needed
@@ -33,12 +33,12 @@ uint8_t OutgoingPacket[FIFO_SIZE]; // before cobs encoding and sending
 
 struct {
     uint8_t MessageType; // MessageType and PicoDesignatorCode make up Config byte at Index 0
-    uint8_t PicoDesignatorCode;
-    uint8_t Checksum; // Index 1. When outgoing, checksum is of (potentially) partial packet, when incoming, full packet
+    uint8_t PicoDesignatorCode; // 0 (no Pico hub) or 1-6 << 4
+    uint16_t Checksum; // Index 1 and 2. Covers header and packet data. When sending msg confirmation, send whole packet checksum
 
     // if either index exceeds 127, the 8th bit indicates a second byte is needed. Second byte is shifted left by 7
-    uint16_t FirstIndex; // Index 2 and potentially 3
-    uint16_t LastIndex; // Index 3 (or 4) and potentially 4 (or 5)
+    uint16_t FirstIndex; // Index 3 and potentially 4
+    uint16_t LastIndex; // Index 4 (or 5) and potentially 5 (or 6)
 
     // not actually part of the packet header, just useful
     int DataStartOffset;
@@ -62,7 +62,7 @@ class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding
         uint32_t sendPacketReattemptTimer;
         uint32_t fullPacketResendTimer; // TODO -- determine if necessary
         uint16_t timeBeforeFullPacketResend = 5000; // TODO -- determine if necessary
-        uint8_t outputBufferChecksum;
+        uint16_t outputBufferChecksum;
 
         // decide if necessary or helpful to have buffer update function which can receive an array
         // currently updates are down a byte at a time, with one function call per byte
@@ -83,7 +83,7 @@ class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding
         void updateBufferAtByte(int byteIndex, uint8_t newByte)
         {
             if(byteIndex >= outputBufferSize){
-                // printf("Error. ByteIndex %i is too large for %s. Max size is %i\n", byteIndex, name, outputBufferSize);
+                printf("Error. ByteIndex %i is too large for %s. Max size is %i\n", byteIndex, name, outputBufferSize);
                 return;
             }
             if (outputBuffer[byteIndex] != newByte)
@@ -91,9 +91,6 @@ class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding
                 outputBuffer[byteIndex] = newByte;
                 doUpdatesNeedToBeSent = true;
                 setOutputBufferChecksum();
-                for(int i = 0; i < outputBufferSize; i++){
-
-                }
                 sendPacketReattemptTimer = millis() - TIME_BETWEEN_REATTEMPTED_MESSAGE; // so any new updates will send right away. TODO -- verify this is not bad
                 updateMinAndMaxBufferIndices(byteIndex);
             }
@@ -101,11 +98,11 @@ class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding
 
         void updateBufferAtByteAndBit(int byteIndex, uint8_t bitIndex, bool bitState){
             if(byteIndex >= outputBufferSize){
-                // printf("Error. ByteIndex %i is too large for %s. Max size is %i\n", byteIndex, name, outputBufferSize);
+                printf("Error. ByteIndex %i is too large for %s. Max size is %i\n", byteIndex, name, outputBufferSize);
                 return;
             }
             if(bitIndex > 7){
-                // printf("Error. Bit index of %i passed to %s\n", bitIndex, name);
+                printf("Error. Bit index of %i passed to %s\n", bitIndex, name);
                 return;
             }
             uint8_t prevByteState = outputBuffer[byteIndex];
@@ -145,7 +142,8 @@ class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding
 
         void verifyChecksum()
         {
-            if(PacketHeader.Checksum == outputBufferChecksum)
+            uint16_t incomingConfirmationChecksum = IncomingPacket[1] + (IncomingPacket[2] << 8);
+            if(incomingConfirmationChecksum == outputBufferChecksum)
             {
                 doUpdatesNeedToBeSent = false;
                 resetMinAndMaxBufferIndices();
@@ -174,7 +172,7 @@ class InputPacket{ // Equivalent to PicoInputPacket. Will have a corresponding P
         void (*onUpdate)(uint8_t*, size_t) = nullptr;
         uint8_t* inputBuffer = nullptr;
         bool updated = false;
-        uint8_t inputBufferChecksum = 0;
+        uint16_t inputBufferChecksum = 0;
         bool initialized = false;
         void initialize(const char* _name, uint8_t _messageType, size_t _inputBufferSize, void(*_onUpdate)(uint8_t*, size_t)){
             name = _name;
@@ -196,7 +194,7 @@ class InputPacket{ // Equivalent to PicoInputPacket. Will have a corresponding P
         {
             if (PacketHeader.LastIndex >= inputBufferSize)
             {
-                // printf("Error: last index exceeds bounds of inputBuffer on %s. Incoming last index is %i but inputBuffer size is %i\n", name, PacketHeader.LastIndex, inputBufferSize);
+                printf("Error: last index exceeds bounds of inputBuffer on %s. Incoming last index is %i but inputBuffer size is %i\n", name, PacketHeader.LastIndex, inputBufferSize);
                 return false;
             }
             bool valuesChanged = false;
@@ -217,11 +215,9 @@ class InputPacket{ // Equivalent to PicoInputPacket. Will have a corresponding P
                 }
                 // printf("new input buffer checksum: %i\n", inputBufferChecksum);
 ;            }
-            return true;
+            return valuesChanged;
         }
 };
-
-// consider some sort of isConnected check if we haven't heard anything for awhile. Maybe a ping going back the other way?
 
 class UnityPicoComms{    
     private:
@@ -279,14 +275,32 @@ class UnityPicoComms{
             handleOutputPackets();
         }
 
-        void handleIncomingPackets(){
+        bool clearIncomingBuffer(){
             uint32_t timeoutTimer = millis();
-            while(millis() - timeoutTimer < 50){
-                if(SerialPort->peek() == -1){
-                    return;
+            while(true){
+                if(millis() - timeoutTimer > 20) return false;
+                if(Serial.available() && Serial.read() == 0) return true;
+            }
+        }
+
+        void handleIncomingPackets(){
+            if(!SerialPort->available()) return;
+            uint32_t timeoutTimer = millis();
+            while(true){
+                if(SerialPort->read() == 0) break; 
+
+                if(!clearIncomingBuffer()){
+                    Serial.println("No initial 0, failed to fully clear buffer");
                 }
+                if(millis() - timeoutTimer > 20) return;
+
+            }
+            timeoutTimer = millis();
+            
+            while(true){
+                if(millis() - timeoutTimer > 25) return;
                 int incomingPacketSize = _decodeBufferAndReturnSize(SerialPort, IncomingPacket);
-                if(incomingPacketSize < 5){
+                if(incomingPacketSize < 6){
                     // Serial.print("wrong packet size? ");
                     // Serial.println(incomingPacketSize);
                     // for(int i = 0; i < incomingPacketSize; i++){
@@ -309,12 +323,7 @@ class UnityPicoComms{
                 }
                 // printPacketHeader();
 
-                uint8_t _designatorCode = IncomingPacket[0] & PICO_DESIGNATOR_MASK;
-                if(picoDesignatorCode != _designatorCode){
-                    picoDesignatorCode = _designatorCode;
-                    uint8_t readableDesignatorCode = picoDesignatorCode >> 4;
-                    printf("Pico designator code: %i\n", readableDesignatorCode);
-                }
+                
 
                 ProcessIncomingPacket(incomingPacketSize);
             }
@@ -333,19 +342,30 @@ class UnityPicoComms{
         }
 
         bool ValidateIncomingPacket(int incomingPacketSize){
+            PacketHeader.MessageType = IncomingPacket[0] & MESSAGE_TYPE_MASK;
+            PacketHeader.PicoDesignatorCode = IncomingPacket[0] & PICO_DESIGNATOR_MASK;
+
+            if(PacketHeader.PicoDesignatorCode != picoDesignatorCode){
+                if(picoDesignatorCode != 0){
+                    printf("invalid designator code. got %i, expected %i\n", PacketHeader.PicoDesignatorCode, picoDesignatorCode);
+                    return false;
+                }
+            }
+            
             int offsetIndex = 0;
-            const int defaultHeaderSize = 4;
-            PacketHeader.Checksum = IncomingPacket[1];
-            PacketHeader.FirstIndex = IncomingPacket[2] & SMALL_INDEX_MASK;
-            if (IncomingPacket[2] > SMALL_INDEX_MASK)
+            const int defaultHeaderSize = 5;
+
+            PacketHeader.Checksum = IncomingPacket[1] + (IncomingPacket[2] << 8);
+            PacketHeader.FirstIndex = IncomingPacket[3] & SMALL_INDEX_MASK;
+            if (IncomingPacket[3] > SMALL_INDEX_MASK)
             {
-                PacketHeader.FirstIndex += (IncomingPacket[3] << 7);
+                PacketHeader.FirstIndex += (IncomingPacket[4] << 7);
                 offsetIndex++;
             }
-            PacketHeader.LastIndex = IncomingPacket[3 + offsetIndex] & SMALL_INDEX_MASK;
-            if (IncomingPacket[3 + offsetIndex] > SMALL_INDEX_MASK)
+            PacketHeader.LastIndex = IncomingPacket[4 + offsetIndex] & SMALL_INDEX_MASK;
+            if (IncomingPacket[4 + offsetIndex] > SMALL_INDEX_MASK)
             {
-                PacketHeader.LastIndex += (IncomingPacket[4 + offsetIndex] << 7);
+                PacketHeader.LastIndex += (IncomingPacket[5 + offsetIndex] << 7);
                 offsetIndex++;
             }
 
@@ -361,7 +381,12 @@ class UnityPicoComms{
             PacketHeader.DataStartOffset = defaultHeaderSize + offsetIndex;
 
             PacketHeader.DataSize = PacketHeader.LastIndex - PacketHeader.FirstIndex + 1;
-            uint8_t _checkSum = 0;
+
+            
+            uint16_t _checkSum = IncomingPacket[0];
+            for(int i = 3; i < PacketHeader.DataStartOffset; i++){
+                _checkSum += IncomingPacket[i];
+            }
             for (int i = PacketHeader.DataStartOffset; i < PacketHeader.DataStartOffset + PacketHeader.DataSize; i++)
             {
                 // if(IncomingPacket[i]){
@@ -381,8 +406,7 @@ class UnityPicoComms{
                 valid = false;
             }
 
-            PacketHeader.MessageType = IncomingPacket[0] & MESSAGE_TYPE_MASK;
-            PacketHeader.PicoDesignatorCode = IncomingPacket[0] & PICO_DESIGNATOR_MASK;
+            
             return valid;
         }
 
@@ -400,19 +424,33 @@ class UnityPicoComms{
                 if(IncomingPacket[PacketHeader.DataStartOffset]){ // if the first data byte wasn't zero, indicating a response is desired
                     SendPing(false);
                 }
+                uint8_t _designatorCode = IncomingPacket[0] & PICO_DESIGNATOR_MASK;
+                if(picoDesignatorCode != _designatorCode){
+                    picoDesignatorCode = _designatorCode;
+                    uint8_t readableDesignatorCode = picoDesignatorCode >> 4;
+                    printf("Pico designator code: %i\n", readableDesignatorCode);
+                }
                 return;
             }
             if (PacketHeader.MessageType == ID_REQUEST_MESSAGE)
             {
                 sendPicoID();
+                uint8_t _designatorCode = IncomingPacket[0] & PICO_DESIGNATOR_MASK;
+                if(picoDesignatorCode != _designatorCode){
+                    picoDesignatorCode = _designatorCode;
+                    uint8_t readableDesignatorCode = picoDesignatorCode >> 4;
+                    printf("Pico designator code: %i\n", readableDesignatorCode);
+                }
                 return;
             }
             
+            if(picoDesignatorCode != PacketHeader.PicoDesignatorCode) return;
+            
             for(int i = 0; i < numInputPackets; i++){
                 if(activeInputPackets[i]->messageType == PacketHeader.MessageType){
-                    if(activeInputPackets[i]->updateInputBuffer()){
-                        SendPacket(activeInputPackets[i]->messageType, picoDesignatorCode, activeInputPackets[i]->inputBufferChecksum);
-                    }
+                    activeInputPackets[i]->updateInputBuffer();
+                    uint8_t checksumBuffer[2] = {activeInputPackets[i]->inputBufferChecksum & 0xFF, activeInputPackets[i]->inputBufferChecksum >> 8};
+                    SendPacket(activeInputPackets[i]->messageType, picoDesignatorCode, 0, 1, checksumBuffer);
                     return;
                 }
             }
@@ -510,39 +548,43 @@ class UnityPicoComms{
             return PicoID;
         }
 
-        void SendPacket(byte configByte, int firstIndex, int lastIndex, uint8_t* buffer)
+        void SendPacket(uint8_t configByte, uint16_t firstIndex, uint16_t lastIndex, uint8_t* buffer)
         {
             // prepare outgoing packet
             OutgoingPacket[0] = configByte;
-            OutgoingPacket[2] = firstIndex & SMALL_INDEX_MASK;
+            OutgoingPacket[3] = firstIndex & SMALL_INDEX_MASK;
             int dataOffset = 0;
-            const int defaultHeaderSize = 4;
+            const int defaultHeaderSize = 5;
             if (firstIndex > SMALL_INDEX_MASK)
             {
-                OutgoingPacket[3] = firstIndex >> 7;
+                OutgoingPacket[4] = firstIndex >> 7;
                 dataOffset++;
             }
-            OutgoingPacket[3 + dataOffset] = lastIndex & SMALL_INDEX_MASK;
+            OutgoingPacket[4 + dataOffset] = lastIndex & SMALL_INDEX_MASK;
             if (lastIndex > SMALL_INDEX_MASK)
             {
-                OutgoingPacket[4 + dataOffset] = lastIndex >> 7;
+                OutgoingPacket[5 + dataOffset] = lastIndex >> 7;
                 dataOffset++;
             }
-            byte checksum = 0;
+            uint16_t checksum = configByte;
+            for(int i = 3; i < defaultHeaderSize + dataOffset; i++){
+                checksum += OutgoingPacket[i];
+            }
             for (int i = firstIndex; i <= lastIndex; i++)
             {
                 OutgoingPacket[dataOffset + defaultHeaderSize + i - firstIndex] = buffer[i];
 
                 checksum += buffer[i];
             }
-            OutgoingPacket[1] = checksum;
+            OutgoingPacket[1] = checksum & 0xFF;
+            OutgoingPacket[2] = checksum >> 8;
 
             int packetSize = defaultHeaderSize + dataOffset + lastIndex - firstIndex + 1;
-
+            SerialPort->write((uint8_t)0);
             _packetSerialSend(SerialPort, OutgoingPacket, packetSize);
         }
 
-        void SendPacket(uint8_t _messageType, uint8_t _picoDesignator, int firstIndex, int lastIndex, uint8_t* buffer){
+        void SendPacket(uint8_t _messageType, uint8_t _picoDesignator, uint16_t firstIndex, uint16_t lastIndex, uint8_t* buffer){
             SendPacket(_messageType + _picoDesignator, firstIndex, lastIndex, buffer);
         }
 
