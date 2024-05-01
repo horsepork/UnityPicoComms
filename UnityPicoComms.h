@@ -271,34 +271,47 @@ class UnityPicoComms{
 
         void update(){
             rp2040.wdt_reset();
-            handleIncomingPackets();
+            while(SerialPort->available()){
+                handleIncomingPackets();
+            }
             handleOutputPackets();
         }
 
-        bool clearIncomingBuffer(){
+        bool clearIncomingBuffer(int timeoutLength = 20){
             uint32_t timeoutTimer = millis();
             while(true){
-                if(millis() - timeoutTimer > 20) return false;
-                if(Serial.available() && Serial.read() == 0) return true;
+                if(millis() - timeoutTimer > timeoutLength) return false;
+                if(SerialPort->available() && SerialPort->read() == 0) return true;
             }
         }
 
         void handleIncomingPackets(){
+            static uint32_t numValidPackets = 0;
+            static uint32_t numFailedPackets = 0;
             if(!SerialPort->available()) return;
-            uint32_t timeoutTimer = millis();
-            while(true){
-                if(SerialPort->read() == 0) break; 
-
-                if(!clearIncomingBuffer()){
-                    Serial.println("No initial 0, failed to fully clear buffer");
-                }
-                if(millis() - timeoutTimer > 20) return;
-
-            }
-            timeoutTimer = millis();
+            uint32_t timeoutTimer;
+            
             
             while(true){
-                if(millis() - timeoutTimer > 25) return;
+                timeoutTimer = millis();
+                while(true){
+                    if(!SerialPort->available()) return;
+                    char input = SerialPort->read();
+                    if(input == 0) break; 
+                    if(millis() - timeoutTimer > 20){
+                        // Serial.println("Timed out before reattempt");
+                        return;
+                    }
+                    if(!clearIncomingBuffer()){
+                        printf("No initial 0 (got %i), failed to fully clear buffer\n", input);
+                        return;
+                    }
+                    
+                    
+
+                }
+                delay(1);
+                if(!SerialPort->available()) return;
                 int incomingPacketSize = _decodeBufferAndReturnSize(SerialPort, IncomingPacket);
                 if(incomingPacketSize < 6){
                     // Serial.print("wrong packet size? ");
@@ -308,7 +321,7 @@ class UnityPicoComms{
                     //     Serial.print(" ");
                     // }
                     // Serial.println();
-                    continue;
+                    // continue;
                 }
                 // printf("incoming packet of size %i\n", incomingPacketSize);
                 // for(int i = 0; i < incomingPacketSize; i++){
@@ -319,7 +332,19 @@ class UnityPicoComms{
                 
                 if(!ValidateIncomingPacket(incomingPacketSize)){
                     // Serial.println("invalid packet");
+                    // printPacketHeader();
+                    // printf("incoming packet of size %i\n", incomingPacketSize);
+                    // for(int i = 0; i < 7; i++){
+                    //     Serial.print((int)IncomingPacket[i]);
+                    //     Serial.print(" ");
+                    // }
+                    numFailedPackets++;
+                    printf("\nv: %i, f: %i\n", numValidPackets, numFailedPackets);
                     continue;
+                    // Serial.println("\n\n");
+                }
+                else{
+                    numValidPackets++;
                 }
                 // printPacketHeader();
 
@@ -330,7 +355,7 @@ class UnityPicoComms{
         }
 
         void printPacketHeader(){
-            printf("\n----\nmessage type: %i, designator code: %i, checksum: %i,\nfirst index: %i, last index: %i, data size: %i, data start offset: %i\n----\n",
+            printf("----\nmessage type: %i, designator code: %i, checksum: %i,\nfirst index: %i, last index: %i, data size: %i, data start offset: %i\n----\n",
                 PacketHeader.MessageType,
                 PacketHeader.PicoDesignatorCode,
                 PacketHeader.Checksum,
@@ -398,11 +423,11 @@ class UnityPicoComms{
             bool valid = true;
 
             if(incomingPacketSize != PacketHeader.DataSize + PacketHeader.DataStartOffset){
-                // printf("Wrong size? Header says %i but cobs says %i\n", (PacketHeader.DataSize + PacketHeader.DataStartOffset), incomingPacketSize);
+                printf("Wrong size? Header says %i but cobs says %i\n", (PacketHeader.DataSize + PacketHeader.DataStartOffset), incomingPacketSize);
                 valid = false;
             }
             if (_checkSum != PacketHeader.Checksum) {
-                // printf("got %i for checksum, calculated %i\n", PacketHeader.Checksum, _checkSum);
+                printf("got %i for checksum, calculated %i\n", PacketHeader.Checksum, _checkSum);
                 valid = false;
             }
 
@@ -450,6 +475,7 @@ class UnityPicoComms{
                 if(activeInputPackets[i]->messageType == PacketHeader.MessageType){
                     activeInputPackets[i]->updateInputBuffer();
                     uint8_t checksumBuffer[2] = {activeInputPackets[i]->inputBufferChecksum & 0xFF, activeInputPackets[i]->inputBufferChecksum >> 8};
+                    // printf("checksum: %i, buffer: %i, %i\n", activeInputPackets[i]->inputBufferChecksum, checksumBuffer[0], checksumBuffer[1]);@
                     SendPacket(activeInputPackets[i]->messageType, picoDesignatorCode, 0, 1, checksumBuffer);
                     return;
                 }
@@ -503,7 +529,7 @@ class UnityPicoComms{
         }
 
         void SendPing(bool requestResponse = false){
-            printf("Sending ping (with response request: %i)\n", requestResponse);
+            // printf("Sending ping (with response request: %i)\n", requestResponse);
             SendPacket(PING_MASK + picoDesignatorCode, requestResponse);
         }
 
