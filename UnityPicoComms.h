@@ -142,7 +142,7 @@ class OutputPacket{ // Equivalent to PicoOutputPacket. Will have a corresponding
 
         void verifyChecksum()
         {
-            uint16_t incomingConfirmationChecksum = IncomingPacket[1] + (IncomingPacket[2] << 8);
+            uint16_t incomingConfirmationChecksum = IncomingPacket[PacketHeader.DataStartOffset] + (IncomingPacket[PacketHeader.DataStartOffset + 1] << 8);
             if(incomingConfirmationChecksum == outputBufferChecksum)
             {
                 doUpdatesNeedToBeSent = false;
@@ -310,8 +310,8 @@ class UnityPicoComms{
                     
 
                 }
-                delay(1);
-                if(!SerialPort->available()) return;
+                timeoutTimer = millis();
+                while(!SerialPort->available()) if(millis() - timeoutTimer > 2) return;
                 int incomingPacketSize = _decodeBufferAndReturnSize(SerialPort, IncomingPacket);
                 if(incomingPacketSize < 6){
                     // Serial.print("wrong packet size? ");
@@ -521,7 +521,7 @@ class UnityPicoComms{
                         activeOutputPackets[i]->IndexOfLastChangedBufferElement,
                         activeOutputPackets[i]->outputBuffer
                     );
-                    delay(10);
+                    // delay(10);
 
                     activeOutputPackets[i]->sendPacketReattemptTimer = millis();
                 }
