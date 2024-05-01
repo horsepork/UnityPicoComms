@@ -511,7 +511,7 @@ class UnityPicoComms{
 
                 if(activeOutputPackets[i]->doUpdatesNeedToBeSent){
                     if(millis() - activeOutputPackets[i]->sendPacketReattemptTimer < TIME_BETWEEN_REATTEMPTED_MESSAGE) continue;
-                    if(activeOutputPackets[i]->IndexOfFirstChangedBufferElement < activeOutputPackets[i]->IndexOfLastChangedBufferElement){
+                    if(activeOutputPackets[i]->IndexOfFirstChangedBufferElement > activeOutputPackets[i]->IndexOfLastChangedBufferElement){
                         activeOutputPackets[i]->makeBufferIndicesCoverFullPacket();
                     }
                     SendPacket(
